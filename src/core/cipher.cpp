@@ -54,8 +54,8 @@ bool Cipher::setKey(QByteArray key)
         //      m_cbc = true;
         //    else
         //    default to CBC
-        m_cbc = true;
-        m_key.prepend("cbc:");
+        m_cbc = false;
+        m_key.prepend("ecb:");
     }
     return true;
 }
@@ -131,7 +131,7 @@ QByteArray Cipher::decrypt(QByteArray cipherText)
     // don't hate me for the mircryption reference there.
     if (cipherText.at(0) == 1)
         pfx = "\x0";
-    cipherText = pfx + cipherText + ' ' + '\n';  // FIXME(??) why is there an added space here?
+    cipherText = pfx + cipherText;  // FIXME(??) why is there an added space here?
     return cipherText;
 }
 

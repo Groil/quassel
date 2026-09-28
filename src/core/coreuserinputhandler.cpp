@@ -420,8 +420,8 @@ void CoreUserInputHandler::handleKeyx(const BufferInfo& bufferInfo, const QStrin
     bool decode_error = false;
     
     if (parms.count() > 0) {
-        if (parms.at(0) == "-cbc") {
-            wants_cbc = true;
+        if (parms.at(0) == "-ecb") {
+            wants_cbc = false;
             if (parms.count() == 2) {
                 target = parms.at(1);
             }
@@ -444,7 +444,7 @@ void CoreUserInputHandler::handleKeyx(const BufferInfo& bufferInfo, const QStrin
             Message::Info,
             typeByTarget(bufname),
             bufname,
-            tr("[usage] /keyx [-cbc] [<nick>] Initiates a DH1080 key exchange with the target.")
+            tr("[usage] /keyx [-ecb] [<nick>] Initiates a DH1080 key exchange with the target.")
         ));
         return;
     }
