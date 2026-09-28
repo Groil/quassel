@@ -415,7 +415,8 @@ void CoreUserInputHandler::handleKeyx(const BufferInfo& bufferInfo, const QStrin
         target = bufferInfo.bufferName(); // default is current buffer
     }
 
-    bool wants_cbc = false; // default
+	//TODO Clean up code
+    bool wants_cbc = true; // Upgrade the client if it doesnt support CBC
     bool decode_error = false;
     
     if (parms.count() > 0) {
