@@ -1,0 +1,2 @@
+SELECT bufferid
+FROM buffer

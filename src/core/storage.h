@@ -112,7 +112,15 @@ public:
      */
     virtual void sync() = 0;
 
-    // TODO: Add functions for configuring the backlog handling, i.e. defining auto-cleanup settings etc
+    //! Delete the oldest messages of every buffer, keeping only the newest ones
+    /** \param keepPerBuffer  Number of newest messages to keep in each buffer (<= 0 does nothing)
+     *  \return Number of deleted messages
+     */
+    virtual int trimBacklog(int keepPerBuffer)
+    {
+        Q_UNUSED(keepPerBuffer)
+        return 0;
+    }
 
     /* User handling */
 

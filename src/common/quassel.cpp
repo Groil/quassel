@@ -370,6 +370,10 @@ void Quassel::setupCliParser()
             {"require-tls", tr("Require TLS for remote (non-loopback) client connections.")},
             {"tls-cert", tr("Specify the path to the TLS certificate."), tr("path"), "configdir/quasselCert.pem"},
             {"tls-key", tr("Specify the path to the SSL key."), tr("path"), "ssl-cert-path"},
+            {"max-backlog-lines",
+             tr("Keep at most this many messages per buffer in the core database; older ones are deleted every 10 minutes. 0 = unlimited."),
+             tr("lines"),
+             "0"},
             {"metrics-daemon", tr("Enable metrics API.")},
             {"metrics-port", tr("The port quasselcore will listen at for metrics requests. Only meaningful with --metrics-daemon."), tr("port"), "9558"},
             {"metrics-listen", tr("The address(es) quasselcore will listen on for metrics requests. Same format as --listen."), tr("<address>[,...]"), "::1,127.0.0.1"}

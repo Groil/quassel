@@ -1,0 +1,214 @@
+diff -ruN orig/quassel-master/src/common/quassel.cpp quassel-master/src/common/quassel.cpp
+--- orig/quassel-master/src/common/quassel.cpp	2026-09-20 22:12:13.000000000 +0000
++++ quassel-master/src/common/quassel.cpp	2026-09-28 13:45:25.628448116 +0000
+@@ -370,6 +370,10 @@
+             {"require-tls", tr("Require TLS for remote (non-loopback) client connections.")},
+             {"tls-cert", tr("Specify the path to the TLS certificate."), tr("path"), "configdir/quasselCert.pem"},
+             {"tls-key", tr("Specify the path to the SSL key."), tr("path"), "ssl-cert-path"},
++            {"max-backlog-lines",
++             tr("Keep at most this many messages per buffer in the core database; older ones are deleted every 10 minutes. 0 = unlimited."),
++             tr("lines"),
++             "0"},
+             {"metrics-daemon", tr("Enable metrics API.")},
+             {"metrics-port", tr("The port quasselcore will listen at for metrics requests. Only meaningful with --metrics-daemon."), tr("port"), "9558"},
+             {"metrics-listen", tr("The address(es) quasselcore will listen on for metrics requests. Same format as --listen."), tr("<address>[,...]"), "::1,127.0.0.1"}
+diff -ruN orig/quassel-master/src/core/SQL/PostgreSQL/delete_backlog_trim.sql quassel-master/src/core/SQL/PostgreSQL/delete_backlog_trim.sql
+--- orig/quassel-master/src/core/SQL/PostgreSQL/delete_backlog_trim.sql	1970-01-01 00:00:00.000000000 +0000
++++ quassel-master/src/core/SQL/PostgreSQL/delete_backlog_trim.sql	2026-09-28 13:45:25.582692241 +0000
+@@ -0,0 +1,3 @@
++DELETE FROM backlog
++WHERE bufferid = :bufferid
++AND messageid < (SELECT messageid FROM backlog WHERE bufferid = :bufferid ORDER BY messageid DESC LIMIT 1 OFFSET :offset)
+diff -ruN orig/quassel-master/src/core/SQL/PostgreSQL/select_all_bufferids.sql quassel-master/src/core/SQL/PostgreSQL/select_all_bufferids.sql
+--- orig/quassel-master/src/core/SQL/PostgreSQL/select_all_bufferids.sql	1970-01-01 00:00:00.000000000 +0000
++++ quassel-master/src/core/SQL/PostgreSQL/select_all_bufferids.sql	2026-09-28 13:45:25.581931562 +0000
+@@ -0,0 +1,2 @@
++SELECT bufferid
++FROM buffer
+diff -ruN orig/quassel-master/src/core/SQL/SQLite/delete_backlog_trim.sql quassel-master/src/core/SQL/SQLite/delete_backlog_trim.sql
+--- orig/quassel-master/src/core/SQL/SQLite/delete_backlog_trim.sql	1970-01-01 00:00:00.000000000 +0000
++++ quassel-master/src/core/SQL/SQLite/delete_backlog_trim.sql	2026-09-28 13:45:25.580465177 +0000
+@@ -0,0 +1,3 @@
++DELETE FROM backlog
++WHERE bufferid = :bufferid
++AND messageid < (SELECT messageid FROM backlog WHERE bufferid = :bufferid ORDER BY messageid DESC LIMIT 1 OFFSET :offset)
+diff -ruN orig/quassel-master/src/core/SQL/SQLite/select_all_bufferids.sql quassel-master/src/core/SQL/SQLite/select_all_bufferids.sql
+--- orig/quassel-master/src/core/SQL/SQLite/select_all_bufferids.sql	1970-01-01 00:00:00.000000000 +0000
++++ quassel-master/src/core/SQL/SQLite/select_all_bufferids.sql	2026-09-28 13:45:25.580262309 +0000
+@@ -0,0 +1,2 @@
++SELECT bufferid
++FROM buffer
+diff -ruN orig/quassel-master/src/core/core.cpp quassel-master/src/core/core.cpp
+--- orig/quassel-master/src/core/core.cpp	2026-09-20 22:12:13.000000000 +0000
++++ quassel-master/src/core/core.cpp	2026-09-28 13:45:25.628341560 +0000
+@@ -478,8 +478,18 @@
+ 
+ void Core::syncStorage()
+ {
+-    if (_storage)
+-        _storage->sync();
++    if (!_storage)
++        return;
++
++    _storage->sync();
++
++    // Enforce the optional per-buffer backlog limit (--max-backlog-lines)
++    int maxLines = Quassel::optionValue("max-backlog-lines").toInt();
++    if (maxLines > 0) {
++        int deleted = _storage->trimBacklog(maxLines);
++        if (deleted > 0)
++            qInfo() << "Backlog limit: removed" << deleted << "old messages (keeping" << maxLines << "per buffer)";
++    }
+ }
+ 
+ /*** Storage Access ***/
+diff -ruN orig/quassel-master/src/core/postgresqlstorage.cpp quassel-master/src/core/postgresqlstorage.cpp
+--- orig/quassel-master/src/core/postgresqlstorage.cpp	2026-09-20 22:12:13.000000000 +0000
++++ quassel-master/src/core/postgresqlstorage.cpp	2026-09-28 13:45:25.628196366 +0000
+@@ -1290,6 +1290,51 @@
+     }
+ }
+ 
++int PostgreSqlStorage::trimBacklog(int keepPerBuffer)
++{
++    if (keepPerBuffer <= 0)
++        return 0;
++
++    QSqlDatabase db = logDb();
++    std::vector<int> bufferIds;
++
++    if (!beginReadOnlyTransaction(db)) {
++        qWarning() << "PostgreSqlStorage::trimBacklog(): cannot start read only transaction!";
++        return 0;
++    }
++    {
++        QSqlQuery query(db);
++        query.prepare(queryString("select_all_bufferids"));
++        safeExec(query);
++        watchQuery(query);
++        while (query.next()) {
++            bufferIds.push_back(query.value(0).toInt());
++        }
++    }
++    db.commit();
++
++    int deleted = 0;
++    for (int bufferId : bufferIds) {
++        if (!beginTransaction(db)) {
++            qWarning() << "PostgreSqlStorage::trimBacklog(): cannot start transaction!";
++            break;
++        }
++        QSqlQuery query(db);
++        query.prepare(queryString("delete_backlog_trim"));
++        query.bindValue(":bufferid", bufferId);
++        query.bindValue(":offset", keepPerBuffer - 1);
++        safeExec(query);
++        if (!watchQuery(query)) {
++            db.rollback();
++            continue;
++        }
++        if (query.numRowsAffected() > 0)
++            deleted += query.numRowsAffected();
++        db.commit();
++    }
++    return deleted;
++}
++
+ bool PostgreSqlStorage::renameBuffer(const UserId& user, const BufferId& bufferId, const QString& newName)
+ {
+     QSqlDatabase db = logDb();
+diff -ruN orig/quassel-master/src/core/postgresqlstorage.h quassel-master/src/core/postgresqlstorage.h
+--- orig/quassel-master/src/core/postgresqlstorage.h	2026-09-20 22:12:13.000000000 +0000
++++ quassel-master/src/core/postgresqlstorage.h	2026-09-28 13:45:25.627322867 +0000
+@@ -89,6 +89,7 @@
+     std::vector<BufferInfo> requestBuffers(UserId user) override;
+     std::vector<BufferId> requestBufferIdsForNetwork(UserId user, NetworkId networkId) override;
+     bool removeBuffer(const UserId& user, const BufferId& bufferId) override;
++    int trimBacklog(int keepPerBuffer) override;
+     bool renameBuffer(const UserId& user, const BufferId& bufferId, const QString& newName) override;
+     bool mergeBuffersPermanently(const UserId& user, const BufferId& bufferId1, const BufferId& bufferId2) override;
+     QHash<BufferId, MsgId> bufferLastMsgIds(UserId user) override;
+diff -ruN orig/quassel-master/src/core/sqlitestorage.cpp quassel-master/src/core/sqlitestorage.cpp
+--- orig/quassel-master/src/core/sqlitestorage.cpp	2026-09-20 22:12:13.000000000 +0000
++++ quassel-master/src/core/sqlitestorage.cpp	2026-09-28 13:45:25.627887374 +0000
+@@ -1383,6 +1383,48 @@
+     return !error;
+ }
+ 
++int SqliteStorage::trimBacklog(int keepPerBuffer)
++{
++    if (keepPerBuffer <= 0)
++        return 0;
++
++    QSqlDatabase db = logDb();
++    std::vector<int> bufferIds;
++
++    db.transaction();
++    {
++        QSqlQuery query(db);
++        query.prepare(queryString("select_all_bufferids"));
++        lockForRead();
++        safeExec(query);
++        watchQuery(query);
++        while (query.next()) {
++            bufferIds.push_back(query.value(0).toInt());
++        }
++    }
++    db.commit();
++    unlock();
++
++    int deleted = 0;
++    for (int bufferId : bufferIds) {
++        db.transaction();
++        {
++            QSqlQuery query(db);
++            query.prepare(queryString("delete_backlog_trim"));
++            query.bindValue(":bufferid", bufferId);
++            query.bindValue(":offset", keepPerBuffer - 1);
++
++            lockForWrite();
++            safeExec(query);
++            if (watchQuery(query) && query.numRowsAffected() > 0)
++                deleted += query.numRowsAffected();
++        }
++        db.commit();
++        unlock();
++    }
++    return deleted;
++}
++
+ bool SqliteStorage::renameBuffer(const UserId& user, const BufferId& bufferId, const QString& newName)
+ {
+     QSqlDatabase db = logDb();
+diff -ruN orig/quassel-master/src/core/sqlitestorage.h quassel-master/src/core/sqlitestorage.h
+--- orig/quassel-master/src/core/sqlitestorage.h	2026-09-20 22:12:13.000000000 +0000
++++ quassel-master/src/core/sqlitestorage.h	2026-09-28 13:45:25.627234279 +0000
+@@ -93,6 +93,7 @@
+     std::vector<BufferInfo> requestBuffers(UserId user) override;
+     std::vector<BufferId> requestBufferIdsForNetwork(UserId user, NetworkId networkId) override;
+     bool removeBuffer(const UserId& user, const BufferId& bufferId) override;
++    int trimBacklog(int keepPerBuffer) override;
+     bool renameBuffer(const UserId& user, const BufferId& bufferId, const QString& newName) override;
+     bool mergeBuffersPermanently(const UserId& user, const BufferId& bufferId1, const BufferId& bufferId2) override;
+     QHash<BufferId, MsgId> bufferLastMsgIds(UserId user) override;
+diff -ruN orig/quassel-master/src/core/storage.h quassel-master/src/core/storage.h
+--- orig/quassel-master/src/core/storage.h	2026-09-20 22:12:13.000000000 +0000
++++ quassel-master/src/core/storage.h	2026-09-28 13:45:25.627076218 +0000
+@@ -112,7 +112,15 @@
+      */
+     virtual void sync() = 0;
+ 
+-    // TODO: Add functions for configuring the backlog handling, i.e. defining auto-cleanup settings etc
++    //! Delete the oldest messages of every buffer, keeping only the newest ones
++    /** \param keepPerBuffer  Number of newest messages to keep in each buffer (<= 0 does nothing)
++     *  \return Number of deleted messages
++     */
++    virtual int trimBacklog(int keepPerBuffer)
++    {
++        Q_UNUSED(keepPerBuffer)
++        return 0;
++    }
+ 
+     /* User handling */
+ 
+ 

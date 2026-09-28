@@ -1290,6 +1290,51 @@ bool PostgreSqlStorage::removeBuffer(const UserId& user, const BufferId& bufferI
     }
 }
 
+int PostgreSqlStorage::trimBacklog(int keepPerBuffer)
+{
+    if (keepPerBuffer <= 0)
+        return 0;
+
+    QSqlDatabase db = logDb();
+    std::vector<int> bufferIds;
+
+    if (!beginReadOnlyTransaction(db)) {
+        qWarning() << "PostgreSqlStorage::trimBacklog(): cannot start read only transaction!";
+        return 0;
+    }
+    {
+        QSqlQuery query(db);
+        query.prepare(queryString("select_all_bufferids"));
+        safeExec(query);
+        watchQuery(query);
+        while (query.next()) {
+            bufferIds.push_back(query.value(0).toInt());
+        }
+    }
+    db.commit();
+
+    int deleted = 0;
+    for (int bufferId : bufferIds) {
+        if (!beginTransaction(db)) {
+            qWarning() << "PostgreSqlStorage::trimBacklog(): cannot start transaction!";
+            break;
+        }
+        QSqlQuery query(db);
+        query.prepare(queryString("delete_backlog_trim"));
+        query.bindValue(":bufferid", bufferId);
+        query.bindValue(":offset", keepPerBuffer - 1);
+        safeExec(query);
+        if (!watchQuery(query)) {
+            db.rollback();
+            continue;
+        }
+        if (query.numRowsAffected() > 0)
+            deleted += query.numRowsAffected();
+        db.commit();
+    }
+    return deleted;
+}
+
 bool PostgreSqlStorage::renameBuffer(const UserId& user, const BufferId& bufferId, const QString& newName)
 {
     QSqlDatabase db = logDb();

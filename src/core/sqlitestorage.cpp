@@ -1383,6 +1383,48 @@ bool SqliteStorage::removeBuffer(const UserId& user, const BufferId& bufferId)
     return !error;
 }
 
+int SqliteStorage::trimBacklog(int keepPerBuffer)
+{
+    if (keepPerBuffer <= 0)
+        return 0;
+
+    QSqlDatabase db = logDb();
+    std::vector<int> bufferIds;
+
+    db.transaction();
+    {
+        QSqlQuery query(db);
+        query.prepare(queryString("select_all_bufferids"));
+        lockForRead();
+        safeExec(query);
+        watchQuery(query);
+        while (query.next()) {
+            bufferIds.push_back(query.value(0).toInt());
+        }
+    }
+    db.commit();
+    unlock();
+
+    int deleted = 0;
+    for (int bufferId : bufferIds) {
+        db.transaction();
+        {
+            QSqlQuery query(db);
+            query.prepare(queryString("delete_backlog_trim"));
+            query.bindValue(":bufferid", bufferId);
+            query.bindValue(":offset", keepPerBuffer - 1);
+
+            lockForWrite();
+            safeExec(query);
+            if (watchQuery(query) && query.numRowsAffected() > 0)
+                deleted += query.numRowsAffected();
+        }
+        db.commit();
+        unlock();
+    }
+    return deleted;
+}
+
 bool SqliteStorage::renameBuffer(const UserId& user, const BufferId& bufferId, const QString& newName)
 {
     QSqlDatabase db = logDb();

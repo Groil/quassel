@@ -478,8 +478,18 @@ bool Core::initStorage(
 
 void Core::syncStorage()
 {
-    if (_storage)
-        _storage->sync();
+    if (!_storage)
+        return;
+
+    _storage->sync();
+
+    // Enforce the optional per-buffer backlog limit (--max-backlog-lines)
+    int maxLines = Quassel::optionValue("max-backlog-lines").toInt();
+    if (maxLines > 0) {
+        int deleted = _storage->trimBacklog(maxLines);
+        if (deleted > 0)
+            qInfo() << "Backlog limit: removed" << deleted << "old messages (keeping" << maxLines << "per buffer)";
+    }
 }
 
 /*** Storage Access ***/

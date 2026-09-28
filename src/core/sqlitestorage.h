@@ -93,6 +93,7 @@ public:
     std::vector<BufferInfo> requestBuffers(UserId user) override;
     std::vector<BufferId> requestBufferIdsForNetwork(UserId user, NetworkId networkId) override;
     bool removeBuffer(const UserId& user, const BufferId& bufferId) override;
+    int trimBacklog(int keepPerBuffer) override;
     bool renameBuffer(const UserId& user, const BufferId& bufferId, const QString& newName) override;
     bool mergeBuffersPermanently(const UserId& user, const BufferId& bufferId1, const BufferId& bufferId2) override;
     QHash<BufferId, MsgId> bufferLastMsgIds(UserId user) override;
