@@ -139,13 +139,24 @@ QVariant ChatLineModelItem::contentsData(int role) const
     switch (role) {
     case ChatLineModel::DisplayRole:
     case ChatLineModel::EditRole:
-        return _styledMsg.plainContents();
+        return _styledMsg.decoratedSender().isEmpty() ? _styledMsg.plainContents()
+                                                      : _styledMsg.decoratedSender() + " " + _styledMsg.plainContents();
     case ChatLineModel::BackgroundRole:
         return backgroundBrush(UiStyle::FormatType::Contents);
     case ChatLineModel::SelectedBackgroundRole:
         return backgroundBrush(UiStyle::FormatType::Contents, true);
-    case ChatLineModel::FormatRole:
-        return QVariant::fromValue(_styledMsg.contentsFormatList());
+    case ChatLineModel::FormatRole: {
+        const QString sender = _styledMsg.decoratedSender();
+        if (sender.isEmpty())
+            return QVariant::fromValue(_styledMsg.contentsFormatList());
+
+        const quint16 senderLength = sender.length() + 1;
+        UiStyle::FormatList formatList{
+            std::make_pair(quint16{0}, UiStyle::Format{UiStyle::formatType(_styledMsg.type()) | UiStyle::FormatType::Sender, {}, {}})};
+        for (const auto& format : _styledMsg.contentsFormatList())
+            formatList.emplace_back(format.first + senderLength, format.second);
+        return QVariant::fromValue(formatList);
+    }
     case ChatLineModel::WrapListRole:
         if (_wrapList.isEmpty())
             computeWrapList();
@@ -177,14 +188,15 @@ QVariant ChatLineModelItem::backgroundBrush(UiStyle::FormatType subelement, bool
 
 void ChatLineModelItem::computeWrapList() const
 {
-    QString text = _styledMsg.plainContents();
+    const QString sender = _styledMsg.decoratedSender();
+    const QString text = sender.isEmpty() ? _styledMsg.plainContents() : sender + " " + _styledMsg.plainContents();
     int length = text.length();
     if (!length)
         return;
 
     QList<ChatLineModel::Word> wplist;  // use a temp list which we'll later copy into a QVector for efficiency
     QTextBoundaryFinder finder(QTextBoundaryFinder::Line,
-                               _styledMsg.plainContents().unicode(),
+                               text.unicode(),
                                length,
                                TextBoundaryFinderBuffer,
                                TextBoundaryFinderBufferSize);
@@ -195,12 +207,20 @@ void ChatLineModelItem::computeWrapList() const
     word.start = 0;
     qreal wordstartx = 0;
 
-    QTextLayout layout(_styledMsg.plainContents());
+    QTextLayout layout(text);
     QTextOption option;
     option.setWrapMode(QTextOption::NoWrap);
     layout.setTextOption(option);
 
-    UiStyle::setTextLayoutFormats(layout, QtUi::style()->toTextLayoutList(_styledMsg.contentsFormatList(), length, messageLabel()));
+    UiStyle::FormatList formatList{
+        std::make_pair(quint16{0}, UiStyle::Format{UiStyle::formatType(_styledMsg.type()) | UiStyle::FormatType::Sender, {}, {}})};
+    const quint16 senderLength = sender.length() + (sender.isEmpty() ? 0 : 1);
+    if (sender.isEmpty())
+        formatList.clear();
+    for (const auto& format : _styledMsg.contentsFormatList())
+        formatList.emplace_back(format.first + senderLength, format.second);
+
+    UiStyle::setTextLayoutFormats(layout, QtUi::style()->toTextLayoutList(formatList, length, messageLabel()));
     layout.beginLayout();
     QTextLine line = layout.createLine();
     line.setNumColumns(length);

@@ -60,7 +60,7 @@ ChatLine::ChatLine(int row,
     , _row(row) // needs to be set before the items
     , _model(model)
     , _contentsItem(contentsPos, contentsWidth, this)
-    , _senderItem(QRectF(senderPos, QSizeF(senderWidth, _contentsItem.height())), this)
+    , _senderItem(QRectF(senderPos, QSizeF(0, _contentsItem.height())), this)
     , _timestampItem(QRectF(0, 0, timestampWidth, _contentsItem.height()), this)
     , _width(width)
     , _height(_contentsItem.height())
@@ -135,7 +135,7 @@ bool ChatLine::sceneEvent(QEvent* event)
 void ChatLine::setFirstColumn(const qreal& timestampWidth, const qreal& senderWidth, const QPointF& senderPos)
 {
     _timestampItem.setGeometry(timestampWidth, _height);
-    _senderItem.setGeometry(senderWidth, _height);
+    _senderItem.setGeometry(0, _height);
     _senderItem.setPos(senderPos);
 }
 
@@ -147,7 +147,7 @@ void ChatLine::setSecondColumn(const qreal& senderWidth, const qreal& contentsWi
     bool needGeometryChange = (height != _height);
 
     _timestampItem.setHeight(height);
-    _senderItem.setGeometry(senderWidth, height);
+    _senderItem.setGeometry(0, height);
     _contentsItem.setPos(contentsPos);
 
     if (needGeometryChange)

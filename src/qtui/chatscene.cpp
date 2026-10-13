@@ -95,12 +95,18 @@ ChatScene::ChatScene(QAbstractItemModel* model, QString idString, qreal width, C
     _secondColHandlePos = viewSettings.value("SecondColumnHandlePos", _defaultSecondColHandlePos).toInt();
 
     _firstColHandle = new ColumnHandleItem(QtUi::style()->firstColumnSeparator());
+    _firstColHandle->setVisible(false);
+    _firstColHandle->setAcceptHoverEvents(false);
+    _firstColHandle->setAcceptedMouseButtons(Qt::NoButton);
     addItem(_firstColHandle);
     _firstColHandle->setXPos(_firstColHandlePos);
     connect(_firstColHandle, &ColumnHandleItem::positionChanged, this, &ChatScene::firstHandlePositionChanged);
     connect(this, &QGraphicsScene::sceneRectChanged, _firstColHandle, &ColumnHandleItem::sceneRectChanged);
 
     _secondColHandle = new ColumnHandleItem(QtUi::style()->secondColumnSeparator());
+    _secondColHandle->setVisible(false);
+    _secondColHandle->setAcceptHoverEvents(false);
+    _secondColHandle->setAcceptedMouseButtons(Qt::NoButton);
     addItem(_secondColHandle);
     _secondColHandle->setXPos(_secondColHandlePos);
     connect(_secondColHandle, &ColumnHandleItem::positionChanged, this, &ChatScene::secondHandlePositionChanged);
@@ -345,10 +351,10 @@ void ChatScene::rowsInserted(const QModelIndex& index, int start, int end)
         y = _lines.last()->y() + _lines.last()->height();
     }
 
-    qreal contentsWidth = width - secondColumnHandle()->sceneRight();
-    qreal senderWidth = secondColumnHandle()->sceneLeft() - firstColumnHandle()->sceneRight();
+    qreal contentsWidth = width - firstColumnHandle()->sceneRight();
+    qreal senderWidth = 0;
     qreal timestampWidth = firstColumnHandle()->sceneLeft();
-    QPointF contentsPos(secondColumnHandle()->sceneRight(), 0);
+    QPointF contentsPos(firstColumnHandle()->sceneRight(), 0);
     QPointF senderPos(firstColumnHandle()->sceneRight(), 0);
 
     if (atTop) {
@@ -627,6 +633,7 @@ void ChatScene::firstHandlePositionChanged(qreal xpos)
         --lineIter;
         (*lineIter)->setFirstColumn(timestampWidth, senderWidth, senderPos);
     }
+    secondHandlePositionChanged(_secondColHandlePos);
     // setItemIndexMethod(QGraphicsScene::BspTreeIndex);
 
     setHandleXLimits();
@@ -637,9 +644,6 @@ void ChatScene::firstHandlePositionChanged(qreal xpos)
 
 void ChatScene::secondHandlePositionChanged(qreal xpos)
 {
-    if (_secondColHandlePos == xpos)
-        return;
-
     _secondColHandlePos = xpos;
     ChatViewSettings viewSettings(this);
     viewSettings.setValue("SecondColumnHandlePos", _secondColHandlePos);
@@ -655,9 +659,9 @@ void ChatScene::secondHandlePositionChanged(qreal xpos)
     QList<ChatLine*>::iterator lineIter = _lines.end();
     QList<ChatLine*>::iterator lineIterBegin = _lines.begin();
     qreal linePos = _sceneRect.y() + _sceneRect.height();
-    qreal senderWidth = secondColumnHandle()->sceneLeft() - firstColumnHandle()->sceneRight();
-    qreal contentsWidth = _sceneRect.width() - secondColumnHandle()->sceneRight();
-    QPointF contentsPos(secondColumnHandle()->sceneRight(), 0);
+    qreal senderWidth = 0;
+    qreal contentsWidth = _sceneRect.width() - firstColumnHandle()->sceneRight();
+    QPointF contentsPos(firstColumnHandle()->sceneRight(), 0);
     while (lineIter != lineIterBegin) {
         --lineIter;
         (*lineIter)->setSecondColumn(senderWidth, contentsWidth, contentsPos, linePos);
