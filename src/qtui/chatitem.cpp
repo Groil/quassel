@@ -472,7 +472,7 @@ void ChatItem::handleClick(const QPointF& pos, ChatScene::ClickMode clickMode)
 
 void ChatItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 {
-    if (event->buttons() == Qt::LeftButton) {
+    if (event->buttons().testFlag(Qt::LeftButton)) {
         if (boundingRect().contains(event->pos())) {
             qint16 end = posToCursor(event->pos());
             if (end != _selectionEnd) {
@@ -494,7 +494,7 @@ void ChatItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 
 void ChatItem::mousePressEvent(QGraphicsSceneMouseEvent* event)
 {
-    if (event->buttons() == Qt::LeftButton)
+    if (event->buttons().testFlag(Qt::LeftButton))
         event->accept();
     else
         event->ignore();

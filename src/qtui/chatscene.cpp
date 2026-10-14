@@ -824,7 +824,7 @@ void ChatScene::contextMenuEvent(QGraphicsSceneContextMenuEvent* event)
 
 void ChatScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 {
-    if (event->buttons() == Qt::LeftButton) {
+    if (event->buttons().testFlag(Qt::LeftButton)) {
         if (!_clickHandled && (event->scenePos() - _clickPos).toPoint().manhattanLength() >= QApplication::startDragDistance()) {
             if (_clickTimer.isActive())
                 _clickTimer.stop();
@@ -850,14 +850,16 @@ void ChatScene::mouseMoveEvent(QGraphicsSceneMouseEvent* event)
 
 void ChatScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
 {
-    if (event->buttons() == Qt::LeftButton) {
+    if (event->buttons().testFlag(Qt::LeftButton)) {
         _leftButtonPressed = true;
         _clickHandled = false;
         if (!isPosOverSelection(event->scenePos())) {
             // immediately clear selection if clicked outside; otherwise, wait for potential drag
             clearSelection();
         }
-        if (_clickMode != NoClick && _clickTimer.isActive()) {
+        // Do not turn a quick click elsewhere into a double-click at the previous position.
+        const bool sameClickPosition = (_clickPos - event->scenePos()).manhattanLength() <= QApplication::startDragDistance();
+        if (_clickMode != NoClick && _clickTimer.isActive() && sameClickPosition) {
             switch (_clickMode) {
             case NoClick:
                 _clickMode = SingleClick;
@@ -874,7 +876,7 @@ void ChatScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
             case DragStartClick:
                 break;
             }
-            handleClick(Qt::LeftButton, _clickPos);
+            handleClick(Qt::LeftButton, event->scenePos());
         }
         else {
             _clickMode = SingleClick;
