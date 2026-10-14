@@ -189,6 +189,7 @@ public:
     {}
     inline ChatLineModel::ColumnType column() const override { return ChatLineModel::SenderColumn; }
     void handleClick(const QPointF& pos, ChatScene::ClickMode clickMode) override;
+    void addActionsToMenu(QMenu* menu, const QPointF& itemPos) override;
 
 protected:
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget = nullptr) override;

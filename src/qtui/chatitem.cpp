@@ -42,6 +42,7 @@
 #include "contextmenuactionprovider.h"
 #include "icon.h"
 #include "mainwin.h"
+#include "network.h"
 #include "qtui.h"
 #include "qtuistyle.h"
 
@@ -526,6 +527,22 @@ void SenderChatItem::initLayout(QTextLayout* layout) const
     doLayout(layout);
 }
 
+void SenderChatItem::addActionsToMenu(QMenu* menu, const QPointF& pos)
+{
+    QString nick = data(ChatLineModel::EditRole).toString();
+    if (!nick.isEmpty()) {
+        int actionCount = menu->actions().count();
+        GraphicalUi::contextMenuActionProvider()->addActions(menu,
+                                                             chatScene()->filter(),
+                                                             data(MessageModel::BufferIdRole).value<BufferId>(),
+                                                             nick);
+        if (menu->actions().count() != actionCount)
+            return;
+    }
+
+    ChatItem::addActionsToMenu(menu, pos);
+}
+
 void SenderChatItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
     Q_UNUSED(option);
@@ -795,6 +812,26 @@ void ContentsChatItem::hoverMoveEvent(QGraphicsSceneHoverEvent* event)
 {
     bool onClickable = false;
     Clickable click = clickableAt(event->pos());
+    if (!click.isValid()) {
+        QString text = data(ChatLineModel::DisplayRole).toString();
+        int cursor = posToCursor(event->pos());
+        int start = cursor;
+        int end = cursor;
+        auto isNickCharacter = [](QChar character) {
+            return character.isLetterOrNumber() || QStringLiteral("_-[]\\`^{}|~").contains(character);
+        };
+        while (start > 0 && isNickCharacter(text.at(start - 1)))
+            --start;
+        while (end < text.length() && isNickCharacter(text.at(end)))
+            ++end;
+        if (start < end) {
+            QString nick = text.mid(start, end - start);
+            NetworkId networkId = Client::networkModel()->networkId(data(MessageModel::BufferIdRole).value<BufferId>());
+            const Network* network = Client::network(networkId);
+            if (network && network->ircUser(nick))
+                click = Clickable(Clickable::Nick, start, end - start);
+        }
+    }
     if (click.isValid()) {
         if (click.type() == Clickable::Url) {
             onClickable = true;
@@ -806,6 +843,9 @@ void ContentsChatItem::hoverMoveEvent(QGraphicsSceneHoverEvent* event)
             BufferId myId = data(MessageModel::BufferIdRole).value<BufferId>();
             if (Client::networkModel()->bufferName(myId) != name)
                 onClickable = true;
+        }
+        else if (click.type() == Clickable::Nick) {
+            onClickable = true;
         }
         if (onClickable) {
             chatLine()->setCursor(Qt::PointingHandCursor);
@@ -831,6 +871,15 @@ void ContentsChatItem::addActionsToMenu(QMenu* menu, const QPointF& pos)
             menu->addAction(action);
             break;
         }
+        case Clickable::Nick: {
+            menu->clear();
+            QString name = data(ChatLineModel::DisplayRole).toString().mid(click.start(), click.length());
+            GraphicalUi::contextMenuActionProvider()->addActions(menu,
+                                                                 chatScene()->filter(),
+                                                                 data(MessageModel::BufferIdRole).value<BufferId>(),
+                                                                 name);
+            break;
+        }
         case Clickable::Channel: {
             // Remove existing menu actions, they confuse us when right-clicking on a clickable
             menu->clear();
@@ -846,6 +895,29 @@ void ContentsChatItem::addActionsToMenu(QMenu* menu, const QPointF& pos)
         }
     }
     else {
+        QString text = data(ChatLineModel::DisplayRole).toString();
+        int cursor = posToCursor(pos);
+        int start = cursor;
+        int end = cursor;
+        auto isNickCharacter = [](QChar character) {
+            return character.isLetterOrNumber() || QStringLiteral("_-[]\\`^{}|~").contains(character);
+        };
+        while (start > 0 && isNickCharacter(text.at(start - 1)))
+            --start;
+        while (end < text.length() && isNickCharacter(text.at(end)))
+            ++end;
+
+        if (start < end) {
+            QString nick = text.mid(start, end - start);
+            int actionCount = menu->actions().count();
+            GraphicalUi::contextMenuActionProvider()->addActions(menu,
+                                                                 chatScene()->filter(),
+                                                                 data(MessageModel::BufferIdRole).value<BufferId>(),
+                                                                 nick);
+            if (menu->actions().count() != actionCount)
+                return;
+        }
+
         // Buffer-specific actions
         ChatItem::addActionsToMenu(menu, pos);
     }

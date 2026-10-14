@@ -31,7 +31,25 @@
 #include "clientignorelistmanager.h"
 #include "icon.h"
 #include "network.h"
+#include "networkmodel.h"
 #include "util.h"
+
+namespace
+{
+QModelIndex findIrcUserIndex(const QAbstractItemModel* model, const QModelIndex& parent, IrcUser* user)
+{
+    for (int row = 0; row < model->rowCount(parent); ++row) {
+        QModelIndex index = model->index(row, 0, parent);
+        if (index.data(NetworkModel::IrcUserRole).value<IrcUser*>() == user)
+            return index;
+
+        QModelIndex result = findIrcUserIndex(model, index, user);
+        if (result.isValid())
+            return result;
+    }
+    return {};
+}
+}
 
 ContextMenuActionProvider::ContextMenuActionProvider(QObject* parent)
     : NetworkModelController(parent)
@@ -261,7 +279,23 @@ void ContextMenuActionProvider::addActions(QMenu* menu,
                     addAction(JoinChannel, menu);
             }
             else {
-                // TODO: actions for a nick
+                QModelIndex msgIdx = indexList().at(0);
+                if (!msgIdx.isValid())
+                    return;
+
+                NetworkId networkId = msgIdx.data(NetworkModel::NetworkIdRole).value<NetworkId>();
+                const Network* network = Client::network(networkId);
+                IrcUser* ircUser = network ? network->ircUser(contextItem()) : nullptr;
+                if (!ircUser)
+                    return;
+
+                QModelIndex userIndex = findIrcUserIndex(Client::networkModel(), {}, ircUser);
+                if (!userIndex.isValid())
+                    return;
+
+                setIndexList(userIndex);
+                setContextItem(QString());
+                addIrcUserActions(menu, userIndex);
             }
         }
     }
@@ -368,7 +402,27 @@ void ContextMenuActionProvider::addIrcUserActions(QMenu* menu, const QModelIndex
     }
     else if (!contextItem().isEmpty() && messageFilter()) {
         // case d
-        // TODO
+        QModelIndex msgIdx = indexList().at(0);
+        if (!msgIdx.isValid())
+            return;
+
+        NetworkId networkId = msgIdx.data(NetworkModel::NetworkIdRole).value<NetworkId>();
+        const Network* network = Client::network(networkId);
+        IrcUser* ircUser = network ? network->ircUser(contextItem()) : nullptr;
+        if (!ircUser)
+            return;
+
+        QModelIndexList userIndexes = Client::networkModel()->match(QModelIndex(),
+                                                                     NetworkModel::IrcUserRole,
+                                                                     QVariant::fromValue(static_cast<QObject*>(ircUser)),
+                                                                     -1,
+                                                                     Qt::MatchRecursive);
+        if (userIndexes.isEmpty())
+            return;
+
+        setIndexList(userIndexes.first());
+        setContextItem(QString());
+        addIrcUserActions(menu, userIndexes.first());
     }
 }
 
